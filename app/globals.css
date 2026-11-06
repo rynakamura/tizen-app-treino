@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: #09090b;
+    color: #f4f4f5;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeSpeed;
+  }
+}
+
+/* Otimização de Alta Performance para Smart TVs (Tizen / ARM) */
+/* Sem transições pesadas, sem scale que causa repaints de layout, e sem gaussian blur */
+.tv-focusable {
+  transition: border-color 0.05s ease, background-color 0.05s ease;
+  outline: none !important;
+}
+
+.tv-focused {
+  border-color: #38bdf8 !important;
+  outline: 3px solid #38bdf8 !important;
+  outline-offset: 2px !important;
+  background-color: #18181b !important;
+  z-index: 20;
+}

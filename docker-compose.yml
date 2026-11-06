@@ -1,0 +1,9 @@
+services:
+  app-tv-pessoal:
+    build: .
+    container_name: app-tv-pessoal
+    restart: unless-stopped
+    ports:
+      - "8083:3000"
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,112 @@
+{
+  "currentCycle": 2,
+  "sessionsInCycle": 1,
+  "streakDays": 1,
+  "lastWorkoutDate": "2026-11-06",
+  "history": [
+    {
+      "id": "calib-2026-11-06",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T08:00:00.000Z",
+      "cycle": 1,
+      "sessionInCycle": 1
+    },
+    {
+      "id": "workout-1793983721646",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T16:48:41.646Z",
+      "cycle": 1,
+      "sessionInCycle": 2,
+      "leveledUp": false
+    },
+    {
+      "id": "workout-1793983760984",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T16:49:20.984Z",
+      "cycle": 1,
+      "sessionInCycle": 3,
+      "leveledUp": false
+    },
+    {
+      "id": "workout-1793983802515",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T16:50:02.515Z",
+      "cycle": 1,
+      "sessionInCycle": 4,
+      "leveledUp": false
+    },
+    {
+      "id": "workout-1793983814380",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T16:50:14.380Z",
+      "cycle": 1,
+      "sessionInCycle": 5,
+      "leveledUp": false
+    },
+    {
+      "id": "workout-1793983824421",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T16:50:24.421Z",
+      "cycle": 1,
+      "sessionInCycle": 6,
+      "leveledUp": true
+    },
+    {
+      "id": "workout-1793984489715",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T17:01:29.715Z",
+      "cycle": 2,
+      "sessionInCycle": 1,
+      "leveledUp": false
+    }
+  ],
+  "activityLog": [
+    {
+      "id": "act-str-1793991157491",
+      "type": "stretch_posture",
+      "title": "Exercícios para Corrigir Postura — RPG",
+      "detail": "Dr. Rodrigo Lopes • Alinhamento de coluna e ombros (15 min)",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T18:52:37.484Z",
+      "cycle": 2,
+      "durationMinutes": 15
+    },
+    {
+      "id": "act-calib-2026-11-06",
+      "type": "workout_completed",
+      "title": "1º Treino Concluído (Calibração)",
+      "detail": "Ciclo 1 • Sessão 1 de 6 concluída (Barra, Flexão, Afundo e Prancha)",
+      "date": "2026-11-06",
+      "timestamp": "2026-11-06T08:00:00.000Z",
+      "cycle": 1,
+      "durationMinutes": 15
+    }
+  ],
+  "metrics": {
+    "totalWorkouts": 1,
+    "totalSetsCompleted": 8,
+    "totalWarmups": 1,
+    "totalStretchSessions": 1,
+    "stretchPostureCount": 1,
+    "stretch15mCount": 0,
+    "stretch30mCount": 0,
+    "totalMinutesTrained": 30,
+    "totalChinupReps": 6,
+    "totalPushupReps": 12,
+    "totalSplitSquatReps": 32,
+    "totalPlankSeconds": 70,
+    "manualCycleAdjustments": 0,
+    "highestCycleReached": 1
+  },
+  "today": {
+    "date": "2026-11-06",
+    "warmupDone": false,
+    "sets": {
+      "chinup": 0,
+      "pushup": 0,
+      "splitsquat": 0,
+      "plank": 0
+    },
+    "completedToday": false
+  }
+}
