@@ -14,6 +14,7 @@ import {
   Play,
   Info,
   FastForward,
+  CheckCircle2,
 } from "lucide-react";
 import {
   ActivityEventLog,
@@ -120,6 +121,12 @@ export default function GuidedWorkoutPage() {
   const btn3Ref = useRef<HTMLButtonElement>(null);
   const completionBtnRef = useRef<HTMLButtonElement>(null);
 
+  // Confirmação entre Volta 1 e Volta 2
+  const [showRound2Prompt, setShowRound2Prompt] = useState<boolean>(false);
+  const [round2PromptFocus, setRound2PromptFocus] = useState<number>(0);
+  const round2StartBtnRef = useRef<HTMLButtonElement>(null);
+  const round2FinishBtnRef = useRef<HTMLButtonElement>(null);
+
   const [completionModal, setCompletionModal] = useState<{
     open: boolean;
     leveledUp: boolean;
@@ -138,6 +145,18 @@ export default function GuidedWorkoutPage() {
   const timeline = buildWorkoutTimeline(state.currentCycle);
   const currentStep = timeline[Math.min(stepIdx, timeline.length - 1)];
 
+  // Registra teclas Samsung Tizen (Return / Exit)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        (window as any).tizen?.tvinputdevice?.registerKey("Return");
+      } catch {}
+      try {
+        (window as any).tizen?.tvinputdevice?.registerKey("Exit");
+      } catch {}
+    }
+  }, []);
+
   // Auto-foco imediato no botão principal (OK) para a TV não perder o foco
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -151,9 +170,17 @@ export default function GuidedWorkoutPage() {
       completionBtnRef.current?.focus();
       return;
     }
+    if (showRound2Prompt) {
+      if (round2PromptFocus === 0) {
+        round2StartBtnRef.current?.focus();
+      } else {
+        round2FinishBtnRef.current?.focus();
+      }
+      return;
+    }
     const refs = [btn0Ref, btn1Ref, btn2Ref, btn3Ref];
     refs[focusedBtn]?.current?.focus();
-  }, [focusedBtn, completionModal.open]);
+  }, [focusedBtn, completionModal.open, showRound2Prompt, round2PromptFocus]);
 
   const saveStateToServer = useCallback(async (nextState: PersistedWorkoutState) => {
     setState(nextState);
@@ -291,6 +318,111 @@ export default function GuidedWorkoutPage() {
     });
   }, [saveStateToServer]);
 
+  const startRound2 = useCallback(() => {
+    soundFX.playSuccess();
+    setShowRound2Prompt(false);
+    const activeTimeline = buildWorkoutTimeline(stateRef.current.currentCycle);
+    const nextIdx = 9; // Step 9 = Volta 2, Exercício 1 (Barra Supinada)
+    const nextStepObj = activeTimeline[nextIdx];
+    setStepIdx(nextIdx);
+    setSecondsLeft(nextStepObj.defaultSeconds);
+    setTotalStepSeconds(nextStepObj.defaultSeconds);
+    setIsPaused(false);
+    setFocusedBtn(0);
+  }, []);
+
+  const finishWorkoutWithOneRound = useCallback(() => {
+    const current = stateRef.current;
+    const cycleData = getCycleData(current.currentCycle);
+    const todayIso = current.today.date;
+    const nowIso = new Date().toISOString();
+
+    let nextStreak = current.streakDays;
+    let nextLastDate = current.lastWorkoutDate;
+    let nextCycle = current.currentCycle;
+    let nextSessionsInCycle = current.sessionsInCycle;
+    let leveledUp = false;
+
+    const nextHistory = [...(current.history || [])];
+    const nextActivityLog = [...(current.activityLog || [])];
+    const nextMetrics = { ...(current.metrics || INITIAL_CALIBRATED_STATE.metrics) };
+
+    if (!current.today.completedToday) {
+      const incrementedSession = current.sessionsInCycle + 1;
+      if (incrementedSession > 6) {
+        leveledUp = true;
+        nextCycle = current.currentCycle + 1;
+        nextSessionsInCycle = 1;
+        if (nextCycle > nextMetrics.highestCycleReached) {
+          nextMetrics.highestCycleReached = nextCycle;
+        }
+      } else {
+        nextSessionsInCycle = incrementedSession;
+      }
+
+      if (current.lastWorkoutDate !== todayIso) {
+        nextStreak = current.streakDays + 1;
+        nextLastDate = todayIso;
+      }
+
+      nextHistory.push({
+        id: `workout-${Date.now()}`,
+        date: todayIso,
+        timestamp: nowIso,
+        cycle: current.currentCycle,
+        sessionInCycle: incrementedSession,
+        leveledUp,
+      });
+
+      nextMetrics.totalWorkouts += 1;
+      nextMetrics.totalMinutesTrained += 8;
+
+      nextActivityLog.unshift({
+        id: `act-wk-${Date.now()}`,
+        type: "workout_completed",
+        title: `Treino Concluído — 1 Série (${cycleData.label})`,
+        detail: `Sessão ${incrementedSession} de 6 • 1 volta completa no circuito (Volume Submáximo)`,
+        date: todayIso,
+        timestamp: nowIso,
+        cycle: current.currentCycle,
+        durationMinutes: 8,
+      });
+    }
+
+    const nextState: PersistedWorkoutState = {
+      ...current,
+      currentCycle: nextCycle,
+      sessionsInCycle: nextSessionsInCycle,
+      streakDays: nextStreak,
+      lastWorkoutDate: nextLastDate,
+      history: nextHistory,
+      activityLog: nextActivityLog.slice(0, 120),
+      metrics: nextMetrics,
+      today: {
+        ...current.today,
+        warmupDone: true,
+        sets: {
+          chinup: Math.max(1, current.today.sets.chinup),
+          pushup: Math.max(1, current.today.sets.pushup),
+          splitsquat: Math.max(1, current.today.sets.splitsquat),
+          plank: Math.max(1, current.today.sets.plank),
+        },
+        completedToday: true,
+      },
+    };
+
+    saveStateToServer(nextState);
+    setShowRound2Prompt(false);
+
+    setCompletionModal({
+      open: true,
+      leveledUp,
+      newCycle: nextCycle,
+      newSessionInCycle: nextSessionsInCycle,
+    });
+    soundFX.playSuccess();
+  }, [saveStateToServer]);
+
   const advanceToNextStep = useCallback(() => {
     const current = stateRef.current;
     const activeTimeline = buildWorkoutTimeline(current.currentCycle);
@@ -375,6 +507,15 @@ export default function GuidedWorkoutPage() {
       return;
     }
 
+    // INTERMISSÃO: Ao encerrar o descanso da 1ª volta (Passo 8), pede confirmação para a 2ª volta
+    if (stepIdx === 8) {
+      soundFX.playSuccess();
+      setShowRound2Prompt(true);
+      setIsPaused(true);
+      setRound2PromptFocus(0);
+      return;
+    }
+
     soundFX.playTimerEnd();
     const nextIdx = stepIdx + 1;
     const nextStepObj = activeTimeline[nextIdx];
@@ -434,6 +575,25 @@ export default function GuidedWorkoutPage() {
           e.preventDefault();
           soundFX.playTick(600);
           router.push("/");
+        }
+        return;
+      }
+
+      if (showRound2Prompt) {
+        if (isLeft || isRight || isUp || isDown) {
+          e.preventDefault();
+          soundFX.playTick(520);
+          setRound2PromptFocus((prev) => (prev === 0 ? 1 : 0));
+        } else if (isEnter) {
+          e.preventDefault();
+          if (round2PromptFocus === 0) {
+            startRound2();
+          } else {
+            finishWorkoutWithOneRound();
+          }
+        } else if (isBack) {
+          e.preventDefault();
+          finishWorkoutWithOneRound();
         }
         return;
       }
@@ -856,6 +1016,113 @@ export default function GuidedWorkoutPage() {
           })
         )}
       </footer>
+
+      {/* MODAL DE CONFIRMAÇÃO INTERMEDIÁRIA: ENTRE VOLTA 1 E VOLTA 2 */}
+      {showRound2Prompt && (
+        <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-8 select-none">
+          <div className="w-full max-w-3xl bg-zinc-900 border-4 border-sky-400 rounded-3xl p-8 lg:p-10 text-center flex flex-col items-center">
+            <div className="w-16 h-16 rounded-3xl bg-sky-500 text-zinc-950 flex items-center justify-center mb-4">
+              <Sparkles className="w-8 h-8 stroke-[2.5]" />
+            </div>
+
+            <span className="px-3.5 py-1 rounded-full bg-sky-500/20 text-sky-300 border border-sky-400/30 font-black text-xs uppercase tracking-widest mb-2">
+              Metade do Circuito Concluída
+            </span>
+
+            <h2 className="text-3xl lg:text-4xl font-black text-white">
+              1ª Série (Volta 1) Concluída!
+            </h2>
+            <p className="text-base text-zinc-300 mt-2 max-w-xl">
+              Você realizou todos os 4 exercícios da 1ª volta (Barra, Flexão, Afundo e Prancha). Deseja continuar para a 2ª volta ou finalizar o dia agora com 1 volta?
+            </p>
+
+            <div className="grid grid-cols-2 gap-4 w-full my-7 text-left">
+              <button
+                ref={round2StartBtnRef}
+                tabIndex={0}
+                type="button"
+                onClick={startRound2}
+                onFocus={() => setRound2PromptFocus(0)}
+                onMouseEnter={() => setRound2PromptFocus(0)}
+                className={`p-5 rounded-2xl border-2 tv-focusable cursor-pointer flex flex-col justify-between ${
+                  round2PromptFocus === 0
+                    ? "tv-focused bg-sky-400 text-zinc-950 border-white"
+                    : "bg-zinc-950 border-zinc-800 text-zinc-200"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                        round2PromptFocus === 0
+                          ? "bg-zinc-950 text-sky-300"
+                          : "bg-sky-500/20 text-sky-300"
+                      }`}
+                    >
+                      Recomendado
+                    </span>
+                    <Play className="w-5 h-5 fill-current" />
+                  </div>
+                  <div className="text-xl font-black">Iniciar 2ª Série</div>
+                  <div
+                    className={`text-xs mt-1 ${
+                      round2PromptFocus === 0
+                        ? "text-zinc-900 font-semibold"
+                        : "text-zinc-400"
+                    }`}
+                  >
+                    Fazer a segunda volta (+4 séries) e completar 100% do treino de hoje.
+                  </div>
+                </div>
+              </button>
+
+              <button
+                ref={round2FinishBtnRef}
+                tabIndex={0}
+                type="button"
+                onClick={finishWorkoutWithOneRound}
+                onFocus={() => setRound2PromptFocus(1)}
+                onMouseEnter={() => setRound2PromptFocus(1)}
+                className={`p-5 rounded-2xl border-2 tv-focusable cursor-pointer flex flex-col justify-between ${
+                  round2PromptFocus === 1
+                    ? "tv-focused bg-emerald-400 text-zinc-950 border-white"
+                    : "bg-zinc-950 border-zinc-800 text-zinc-200"
+                }`}
+              >
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span
+                      className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded ${
+                        round2PromptFocus === 1
+                          ? "bg-zinc-950 text-emerald-300"
+                          : "bg-emerald-500/20 text-emerald-300"
+                      }`}
+                    >
+                      Submáximo Válido
+                    </span>
+                    <CheckCircle2 className="w-5 h-5" />
+                  </div>
+                  <div className="text-xl font-black">Finalizar Hoje com 1 Série</div>
+                  <div
+                    className={`text-xs mt-1 ${
+                      round2PromptFocus === 1
+                        ? "text-zinc-900 font-semibold"
+                        : "text-zinc-400"
+                    }`}
+                  >
+                    Salvar o progresso com 1 volta, avançar na escada e descansar.
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            <div className="text-xs text-zinc-400">
+              Navegue com as setas ◀ ▶ do controle remoto e aperte{" "}
+              <strong className="text-white">OK</strong> para confirmar.
+            </div>
+          </div>
+        </div>
+      )}
 
       {completionModal.open && (
         <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-8">

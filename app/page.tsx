@@ -34,12 +34,67 @@ import {
 } from "@/lib/workout-data";
 import { soundFX } from "@/lib/sound";
 
+interface VideoChapter {
+  id: string;
+  title: string;
+  timeRange: string;
+  startSeconds: number;
+  endSeconds: number;
+  cue: string;
+}
+
+const RPG_CHAPTERS: VideoChapter[] = [
+  {
+    id: "mesa",
+    title: "1. Posição da Mesa",
+    timeRange: "01:50 - 03:30",
+    startSeconds: 110,
+    endSeconds: 210,
+    cue: "Tórax para baixo com as mãos apoiadas na parede e coluna alinhada",
+  },
+  {
+    id: "sentada",
+    title: "2. Postura Sentada na Parede",
+    timeRange: "03:35 - 07:18",
+    startSeconds: 215,
+    endSeconds: 438,
+    cue: "3 pontos: osso sacro, dorsal (escápulas) e occipital com pernas esticadas",
+  },
+  {
+    id: "expansao",
+    title: "3. Expansão e Alinhamento",
+    timeRange: "07:19 - 09:50",
+    startSeconds: 439,
+    endSeconds: 590,
+    cue: "Braços a 45° criando a sensação de crescimento contínuo da coluna",
+  },
+  {
+    id: "pescoco",
+    title: "4. Movimentação do Pescoço",
+    timeRange: "10:09 - 12:20",
+    startSeconds: 609,
+    endSeconds: 740,
+    cue: "Queixo no peito e olhar para o teto sem perder contato com a parede",
+  },
+  {
+    id: "bracos",
+    title: "5. Exercício de Braços",
+    timeRange: "12:23 - 14:50",
+    startSeconds: 743,
+    endSeconds: 890,
+    cue: "Subir e descer os braços mantendo contato do antebraço e coluna",
+  },
+];
+
 interface VideoModalState {
   open: boolean;
   title: string;
   subtitle: string;
   videoId: string;
   youtubeUrl: string;
+  chapters?: VideoChapter[];
+  currentStartSeconds: number;
+  selectedChapterId?: string;
 }
 
 export default function HomeHubPage() {
@@ -58,6 +113,11 @@ export default function HomeHubPage() {
   const card2Ref = useRef<HTMLButtonElement>(null);
   const card3Ref = useRef<HTMLButtonElement>(null);
   const card4Ref = useRef<HTMLButtonElement>(null);
+
+  // Refs do Modal de Vídeo
+  const videoCloseBtnRef = useRef<HTMLButtonElement>(null);
+  const videoExternalBtnRef = useRef<HTMLAnchorElement>(null);
+  const chapterBtnRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // 0: Treino Diário
   // 1: Alongamento RPG
@@ -82,8 +142,23 @@ export default function HomeHubPage() {
     subtitle: "",
     videoId: "",
     youtubeUrl: "",
+    chapters: undefined,
+    currentStartSeconds: 0,
+    selectedChapterId: undefined,
   });
   const [videoModalFocus, setVideoModalFocus] = useState<number>(0);
+
+  // Registra teclas nativas de controle remoto da Samsung TV (Return / Exit)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        (window as any).tizen?.tvinputdevice?.registerKey("Return");
+      } catch {}
+      try {
+        (window as any).tizen?.tvinputdevice?.registerKey("Exit");
+      } catch {}
+    }
+  }, []);
 
   // Auto-foco inicial no Card 0 ao carregar a página para capturar o controle remoto da TV
   useEffect(() => {
@@ -218,6 +293,15 @@ export default function HomeHubPage() {
         activityLog: [newLog, ...(current.activityLog || [])].slice(0, 120),
       });
 
+      const isPosture = eventType === "stretch_posture";
+      const initialStart = isPosture ? 110 : 0;
+      const chapters = isPosture ? RPG_CHAPTERS : undefined;
+      const selectedChapterId = isPosture ? "mesa" : undefined;
+
+      try {
+        window.history.pushState({ modal: "video" }, "");
+      } catch {}
+
       setShowStretchPickerModal(false);
       setVideoModalFocus(0);
       setVideoModal({
@@ -226,10 +310,56 @@ export default function HomeHubPage() {
         subtitle,
         videoId,
         youtubeUrl,
+        chapters,
+        currentStartSeconds: initialStart,
+        selectedChapterId,
       });
+
+      setTimeout(() => {
+        videoCloseBtnRef.current?.focus();
+      }, 100);
     },
     [saveStateToServer]
   );
+
+  const closeVideoModal = useCallback(() => {
+    soundFX.playTick(440);
+    setVideoModal((prev) => ({
+      ...prev,
+      open: false,
+      videoId: "",
+      chapters: undefined,
+    }));
+    setTimeout(() => {
+      const refs = [card0Ref, card1Ref, card2Ref, card3Ref, card4Ref];
+      refs[focusedIndex]?.current?.focus();
+    }, 100);
+  }, [focusedIndex]);
+
+  const selectChapter = useCallback((chapter: VideoChapter) => {
+    soundFX.playTick(720);
+    setVideoModal((prev) => ({
+      ...prev,
+      currentStartSeconds: chapter.startSeconds,
+      selectedChapterId: chapter.id,
+    }));
+  }, []);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      if (videoModal.open) {
+        closeVideoModal();
+      } else if (showLadderModal) {
+        setShowLadderModal(false);
+      } else if (showMetricsModal) {
+        setShowMetricsModal(false);
+      } else if (showStretchPickerModal) {
+        setShowStretchPickerModal(false);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [videoModal.open, showLadderModal, showMetricsModal, showStretchPickerModal, closeVideoModal]);
 
   const handleManualCycleChange = useCallback(
     (delta: -1 | 1) => {
@@ -335,21 +465,71 @@ export default function HomeHubPage() {
       const isBack = key === "Escape" || key === "Backspace" || code === 10009 || code === 27;
 
       if (videoModal.open) {
-        if (isLeft || isRight) {
+        if (isBack) {
+          e.preventDefault();
+          closeVideoModal();
+          return;
+        }
+
+        const hasChapters = Boolean(videoModal.chapters && videoModal.chapters.length > 0);
+        const numChapters = hasChapters ? videoModal.chapters!.length : 0;
+
+        if (isLeft) {
           e.preventDefault();
           soundFX.playTick(520);
-          setVideoModalFocus((prev) => (prev === 0 ? 1 : 0));
+          if (videoModalFocus === 1) {
+            setVideoModalFocus(0);
+            videoCloseBtnRef.current?.focus();
+          } else if (videoModalFocus >= 2) {
+            setVideoModalFocus(0);
+            videoCloseBtnRef.current?.focus();
+          }
+        } else if (isRight) {
+          e.preventDefault();
+          soundFX.playTick(520);
+          if (videoModalFocus === 0) {
+            setVideoModalFocus(1);
+            videoExternalBtnRef.current?.focus();
+          } else if (videoModalFocus === 1 && hasChapters) {
+            setVideoModalFocus(2);
+            chapterBtnRefs.current[0]?.focus();
+          }
+        } else if (isDown) {
+          e.preventDefault();
+          soundFX.playTick(520);
+          if (videoModalFocus === 0 || videoModalFocus === 1) {
+            if (hasChapters) {
+              setVideoModalFocus(2);
+              chapterBtnRefs.current[0]?.focus();
+            }
+          } else if (videoModalFocus >= 2 && videoModalFocus < 2 + numChapters - 1) {
+            const next = videoModalFocus + 1;
+            setVideoModalFocus(next);
+            chapterBtnRefs.current[next - 2]?.focus();
+          }
+        } else if (isUp) {
+          e.preventDefault();
+          soundFX.playTick(520);
+          if (videoModalFocus === 2) {
+            setVideoModalFocus(0);
+            videoCloseBtnRef.current?.focus();
+          } else if (videoModalFocus > 2) {
+            const prev = videoModalFocus - 1;
+            setVideoModalFocus(prev);
+            chapterBtnRefs.current[prev - 2]?.focus();
+          }
         } else if (isEnter) {
           e.preventDefault();
           if (videoModalFocus === 0) {
-            setVideoModal((prev) => ({ ...prev, open: false }));
-          } else {
+            closeVideoModal();
+          } else if (videoModalFocus === 1) {
             window.open(videoModal.youtubeUrl, "_blank", "noopener,noreferrer");
+          } else if (hasChapters && videoModalFocus >= 2) {
+            const chap = videoModal.chapters![videoModalFocus - 2];
+            if (chap) {
+              selectChapter(chap);
+            }
           }
-        } else if (isBack) {
-          e.preventDefault();
-          soundFX.playTick(440);
-          setVideoModal((prev) => ({ ...prev, open: false }));
         }
         return;
       }
@@ -965,58 +1145,168 @@ export default function HomeHubPage() {
 
       {/* MODAL PLAYER DE VÍDEO YOUTUBE FULLSCREEN NA TV */}
       {videoModal.open && (
-        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between p-6 lg:p-8">
-          <div className="flex items-center justify-between pb-4">
+        <div className="fixed inset-0 z-50 bg-black/95 flex flex-col justify-between p-5 lg:p-7 select-none">
+          {/* BARRA SUPERIOR DO PLAYER */}
+          <div className="flex items-center justify-between pb-3 border-b border-zinc-800 shrink-0">
             <div>
-              <h2 className="text-2xl lg:text-3xl font-black text-white">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-400/30">
+                  {videoModal.chapters && videoModal.chapters.length > 0
+                    ? "Série de Exercícios na Parede • RPG"
+                    : "Reprodução em Tela Cheia"}
+                </span>
+                <span className="text-xs text-zinc-400">
+                  Use as setas ◀ ▶ ▲ ▼ do controle e OK
+                </span>
+              </div>
+              <h2 className="text-xl lg:text-2xl font-black text-white mt-0.5 truncate">
                 {videoModal.title}
               </h2>
-              <p className="text-sm text-zinc-400">{videoModal.subtitle}</p>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <button
+                ref={videoCloseBtnRef}
                 tabIndex={0}
                 type="button"
-                onClick={() => setVideoModal((prev) => ({ ...prev, open: false }))}
+                onClick={closeVideoModal}
                 onFocus={() => setVideoModalFocus(0)}
                 onMouseEnter={() => setVideoModalFocus(0)}
-                className={`px-6 py-3 rounded-2xl font-black text-base flex items-center gap-2 border-2 tv-focusable cursor-pointer ${
+                className={`px-5 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 border-2 tv-focusable cursor-pointer ${
                   videoModalFocus === 0
                     ? "tv-focused bg-sky-400 text-zinc-950 border-white"
                     : "bg-zinc-800 text-zinc-200 border-zinc-700"
                 }`}
               >
-                <X className="w-5 h-5 stroke-[2.5]" /> Fechar Vídeo e Voltar ao Hub (OK)
+                <X className="w-5 h-5 stroke-[2.5]" /> Voltar ao Hub (OK)
               </button>
 
               <a
+                ref={videoExternalBtnRef}
                 tabIndex={0}
                 href={videoModal.youtubeUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 onFocus={() => setVideoModalFocus(1)}
                 onMouseEnter={() => setVideoModalFocus(1)}
-                className={`px-5 py-3 rounded-2xl font-bold text-sm flex items-center gap-2 border-2 tv-focusable cursor-pointer ${
+                className={`px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-2 border-2 tv-focusable cursor-pointer ${
                   videoModalFocus === 1
                     ? "tv-focused bg-red-600 text-white border-white"
                     : "bg-zinc-900 text-zinc-300 border-zinc-800"
                 }`}
               >
-                <ExternalLink className="w-4 h-4" /> Abrir no YouTube
+                <ExternalLink className="w-4 h-4" /> YouTube Externo
               </a>
             </div>
           </div>
 
-          <div className="flex-1 w-full rounded-3xl overflow-hidden border-2 border-zinc-800 bg-black">
-            <iframe
-              className="w-full h-full"
-              src={`https://www.youtube.com/embed/${videoModal.videoId}?autoplay=1&rel=0`}
-              title={videoModal.title}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              allowFullScreen
-            />
-          </div>
+          {/* CONTEÚDO PRINCIPAL: VÍDEO + CAPÍTULOS SELECIONÁVEIS NA DIREITA */}
+          {videoModal.chapters && videoModal.chapters.length > 0 ? (
+            <div className="flex-1 w-full grid grid-cols-12 gap-5 my-3 min-h-0">
+              {/* COLUNA ESQUERDA: IFRAME DO VÍDEO (70% DA LARGURA) */}
+              <div className="col-span-8 h-full rounded-2xl overflow-hidden border-2 border-zinc-800 bg-black flex flex-col justify-between">
+                <iframe
+                  key={`${videoModal.videoId}-${videoModal.currentStartSeconds}`}
+                  className="w-full flex-1"
+                  tabIndex={-1}
+                  src={`https://www.youtube.com/embed/${videoModal.videoId}?autoplay=1&start=${videoModal.currentStartSeconds}&rel=0&enablejsapi=1`}
+                  title={videoModal.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+                {(() => {
+                  const activeChap = videoModal.chapters.find(
+                    (c) => c.id === videoModal.selectedChapterId
+                  ) || videoModal.chapters[0];
+                  return (
+                    <div className="bg-zinc-900 border-t border-zinc-800 px-4 py-2 flex items-center justify-between text-xs shrink-0">
+                      <span className="font-bold text-teal-300 truncate">
+                        Exercício Ativo: <strong className="text-white ml-1">{activeChap.title}</strong>
+                      </span>
+                      <span className="text-zinc-400 font-medium text-[11px] shrink-0 ml-2">
+                        {activeChap.cue} ({activeChap.timeRange})
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* COLUNA DIREITA: TIMESTAMPS / CAPÍTULOS INTERATIVOS (30% DA LARGURA) */}
+              <div className="col-span-4 h-full flex flex-col justify-between bg-zinc-900/90 border-2 border-zinc-800 rounded-2xl p-3.5 overflow-hidden">
+                <div className="flex items-center justify-between pb-2 border-b border-zinc-800 shrink-0">
+                  <div>
+                    <div className="text-[10px] uppercase font-black tracking-widest text-teal-400">
+                      Capítulos do Alongamento
+                    </div>
+                    <div className="text-sm font-black text-white">
+                      Exercícios na Parede
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-zinc-800 text-zinc-300">
+                    Selecione p/ Pular
+                  </span>
+                </div>
+
+                <div className="flex-1 flex flex-col justify-between gap-1.5 my-1.5 overflow-hidden">
+                  {videoModal.chapters.map((chap, idx) => {
+                    const isSelected =
+                      (videoModal.selectedChapterId || videoModal.chapters![0].id) === chap.id;
+                    const isFocused = videoModalFocus === idx + 2;
+
+                    return (
+                      <button
+                        key={chap.id}
+                        ref={(el) => {
+                          chapterBtnRefs.current[idx] = el;
+                        }}
+                        tabIndex={0}
+                        type="button"
+                        onClick={() => selectChapter(chap)}
+                        onFocus={() => setVideoModalFocus(idx + 2)}
+                        onMouseEnter={() => setVideoModalFocus(idx + 2)}
+                        className={`text-left rounded-xl px-3 py-2 border-2 tv-focusable cursor-pointer flex flex-col justify-between transition-colors ${
+                          isFocused
+                            ? "tv-focused bg-zinc-800 border-teal-400"
+                            : isSelected
+                            ? "bg-zinc-950 border-teal-500/80 text-white"
+                            : "bg-zinc-950/70 border-zinc-800/80 text-zinc-400"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-black text-white truncate">
+                            {chap.title}
+                          </span>
+                          <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-teal-500/20 text-teal-300 border border-teal-500/30 shrink-0 ml-1">
+                            {chap.timeRange}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-zinc-300 line-clamp-1 mt-0.5 leading-snug">
+                          {chap.cue}
+                        </p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="text-[10px] text-zinc-400 text-center shrink-0 pt-1 border-t border-zinc-800">
+                  Navegue com ▲ ▼ e dê <strong className="text-zinc-200">OK</strong> para saltar direto
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* PLAYER PADRÃO (SEM CAPÍTULOS ESPECÍFICOS) */
+            <div className="flex-1 w-full my-3 rounded-2xl overflow-hidden border-2 border-zinc-800 bg-black">
+              <iframe
+                key={`${videoModal.videoId}-${videoModal.currentStartSeconds}`}
+                className="w-full h-full"
+                tabIndex={-1}
+                src={`https://www.youtube.com/embed/${videoModal.videoId}?autoplay=1&start=${videoModal.currentStartSeconds}&rel=0&enablejsapi=1`}
+                title={videoModal.title}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            </div>
+          )}
         </div>
       )}
 
